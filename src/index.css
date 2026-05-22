@@ -1,0 +1,50 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Anek+Bangla:wght@400;500;600;700&family=Hind+Siliguri:wght@400;500;600;700&family=Galada&family=Dancing+Script:wght@400;700&display=swap');
+
+@theme {
+  --font-sans: "Inter", "Anek Bangla", ui-sans-serif, system-ui;
+  --font-serif: "Crimson Pro", serif;
+  --font-handwriting: "Galada", "Dancing Script", cursive;
+  
+  --color-immersive-bg: #0A0A0A;
+  --color-immersive-sidebar: #111111;
+  --color-immersive-viewport: #0D0D0D;
+  --color-paper-classic: #f4ecd8;
+}
+
+@layer base {
+  body {
+    @apply antialiased font-sans transition-colors duration-300 bg-immersive-bg text-neutral-400 h-screen overflow-hidden;
+  }
+}
+
+.handwriting {
+  font-family: var(--font-handwriting);
+}
+
+.paper-classic {
+  background-color: var(--color-paper-classic);
+  background-image: linear-gradient(#e1d1b1 1px, transparent 1px);
+  background-size: 100% 32px;
+  position: relative;
+}
+
+.paper-classic::before {
+  content: '';
+  position: absolute;
+  left: 3rem;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+.dark-paper {
+  background-image: url('https://www.transparenttextures.com/patterns/dark-matter.png');
+  background-color: #1a1a1a;
+}
+
+.paper-shadow {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+

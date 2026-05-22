@@ -1,0 +1,52 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Public and private user profile data",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "username": { "type": "string" },
+        "displayName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "username"]
+    },
+    "Letter": {
+      "title": "Anonymous Letter",
+      "description": "An encrypted anonymous letter sent to a user",
+      "type": "object",
+      "properties": {
+        "toUsername": { "type": "string" },
+        "toUserId": { "type": "string" },
+        "encryptedContent": { "type": "string" },
+        "templateId": { "type": "string" },
+        "backgroundId": { "type": "string" },
+        "fontSize": { "type": "string" },
+        "attachmentBase64": { "type": "string" },
+        "voiceBase64": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["toUsername", "toUserId", "encryptedContent", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "User profiles"
+    },
+    "/usernames/{username}": {
+      "schema": {
+        "type": "object",
+        "properties": {
+          "uid": { "type": "string" }
+        }
+      },
+      "description": "Mapping from username to UID for fast lookups"
+    },
+    "/letters/{letterId}": {
+      "schema": "Letter",
+      "description": "Collection of anonymous letters"
+    }
+  }
+}

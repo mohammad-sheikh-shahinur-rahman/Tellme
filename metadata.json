@@ -1,0 +1,10 @@
+{
+  "name": "TellMe",
+  "description": "An anonymous secret letter platform with nostalgic Bengali hand-written templates and secure encryption.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
