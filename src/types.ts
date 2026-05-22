@@ -18,6 +18,7 @@ export interface Letter {
   voiceBase64?: string;
   replyEncryptedContent?: string;
   repliedAt?: any;
+  isRead?: boolean;
   createdAt: any; // Firestore Timestamp
 }
 

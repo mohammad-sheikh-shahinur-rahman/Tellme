@@ -16,6 +16,13 @@ export const TEMPLATES: WritingTemplate[] = [
     fontFamily: 'handwriting'
   },
   {
+    id: 'classic-minimal',
+    name: 'মিনিমালিস্ট',
+    background: 'bg-stone-50',
+    textColor: 'text-stone-800',
+    fontFamily: 'font-serif'
+  },
+  {
     id: 'classic-yellow',
     name: 'হলদেটে স্মৃতি',
     background: 'bg-yellow-50/80',

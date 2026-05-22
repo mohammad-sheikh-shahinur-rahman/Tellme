@@ -49,6 +49,7 @@ service cloud.firestore {
              (!data.keys().contains('fromUsername') || data.fromUsername is string) &&
              (!data.keys().contains('templateId') || data.templateId is string) &&
              (!data.keys().contains('fontSize') || data.fontSize is string) &&
+             (!data.keys().contains('isRead') || data.isRead is bool) &&
              (!data.keys().contains('attachmentBase64') || (data.attachmentBase64 is string && data.attachmentBase64.size() <= 1000000)) &&
              (!data.keys().contains('voiceBase64') || (data.voiceBase64 is string && data.voiceBase64.size() <= 1500000));
     }
@@ -83,8 +84,9 @@ service cloud.firestore {
       
       allow update: if isSignedIn() && 
                       resource.data.toUserId == request.auth.uid &&
-                      incoming().diff(existing()).affectedKeys().hasOnly(['replyEncryptedContent', 'repliedAt']) &&
-                      incoming().repliedAt == request.time;
+                      incoming().diff(existing()).affectedKeys().hasAny(['replyEncryptedContent', 'repliedAt', 'isRead']) &&
+                      incoming().diff(existing()).affectedKeys().hasOnly(['replyEncryptedContent', 'repliedAt', 'isRead']) &&
+                      (!incoming().diff(existing()).affectedKeys().contains('repliedAt') || incoming().repliedAt == request.time);
 
       allow delete: if isSignedIn() && resource.data.toUserId == request.auth.uid;
     }

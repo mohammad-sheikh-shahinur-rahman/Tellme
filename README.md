@@ -16,6 +16,11 @@ TellMe is a secure, private messaging platform designed for sending heart-felt l
 - **Firebase Authentication**: Secure user login and profile management.
 - **Firestore Security Rules**: Strict access control ensuring users can only access their own data.
 
+## Project Information
+
+TellMe is a private messaging application that supports both Firebase and MySQL backends. It features end-to-end encryption for all messages.
+
 ## Development
 
-This project was developed by **Mohammad Sheikh Shahinur rahman**.
+Developed by **Mohammad Sheikh Shahinur rahman**.
+

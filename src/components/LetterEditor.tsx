@@ -14,11 +14,10 @@ import {
   AlertCircle,
   Loader2
 } from 'lucide-react';
-import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { cn } from '../lib/utils';
 import { TEMPLATES, FONT_SIZES, INITIAL_LETTER_CONTENT } from '../lib/constants';
 import { encryptMessage } from '../lib/crypto';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { sendLetter, getRecipientUid } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
 export default function LetterEditor() {
@@ -44,19 +43,49 @@ export default function LetterEditor() {
 
   const currentFontSize = FONT_SIZES.find(f => f.id === fontSizeId) || FONT_SIZES[1];
 
+  // Auto-load draft
+  useEffect(() => {
+    if (!username) return;
+    const savedDraft = localStorage.getItem(`tellme_draft_${username.toLowerCase()}`);
+    if (savedDraft) {
+      try {
+        const draft = JSON.parse(savedDraft);
+        if (draft.content) setContent(draft.content);
+        if (draft.templateId) setTemplateId(draft.templateId);
+        if (draft.fontSizeId) setFontSizeId(draft.fontSizeId);
+        if (draft.image) setImage(draft.image);
+        if (draft.voiceBlob) setVoiceBlob(draft.voiceBlob);
+      } catch (e) {
+        console.error('Failed to parse draft', e);
+      }
+    }
+  }, [username]);
+
+  // Auto-save draft
+  useEffect(() => {
+    if (!username || isSent) return;
+    const draft = {
+      content,
+      templateId,
+      fontSizeId,
+      image,
+      voiceBlob
+    };
+    localStorage.setItem(`tellme_draft_${username.toLowerCase()}`, JSON.stringify(draft));
+  }, [username, content, templateId, fontSizeId, image, voiceBlob, isSent]);
+
   useEffect(() => {
     const validateRecipient = async () => {
       if (!username) return;
       setIsValidating(true);
       try {
-        const usernameDoc = await getDoc(doc(db, 'usernames', username.toLowerCase()));
-        if (usernameDoc.exists()) {
-          setRecipientUid(usernameDoc.data().uid);
+        const uid = await getRecipientUid(username);
+        if (uid) {
+          setRecipientUid(uid);
         } else {
           setError('এই ইউজারনেমটি খুঁজে পাওয়া যায়নি।');
         }
       } catch (err) {
-        handleFirestoreError(err, OperationType.GET, `usernames/${username.toLowerCase()}`);
         setError('ইউজার যাচাই করতে সমস্যা হয়েছে।');
       } finally {
         setIsValidating(false);
@@ -130,7 +159,7 @@ export default function LetterEditor() {
         fontSize: fontSizeId,
         attachmentBase64: image || null,
         voiceBase64: voiceBlob || null,
-        createdAt: serverTimestamp(),
+        isRead: false,
       };
 
       if (user) {
@@ -138,11 +167,11 @@ export default function LetterEditor() {
         letterData.fromUsername = profile?.username || null;
       }
       
-      await addDoc(collection(db, 'letters'), letterData);
+      await sendLetter(letterData);
 
+      localStorage.removeItem(`tellme_draft_${username.toLowerCase()}`);
       setIsSent(true);
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, 'letters');
       setError('চিঠি পাঠানো সম্ভব হয়নি। আবার চেষ্টা করুন।');
     } finally {
       setIsSending(false);
@@ -218,19 +247,26 @@ export default function LetterEditor() {
           </section>
 
           <section>
-            <h2 className="text-xs uppercase tracking-widest font-semibold text-neutral-500 mb-4 tracking-tighter">টেম্পলেট</h2>
+            <h2 className="text-xs uppercase tracking-widest font-semibold text-neutral-500 mb-4 tracking-tighter">টেম্পলেট ও ফন্ট</h2>
             <div className="grid grid-cols-2 gap-2">
               {TEMPLATES.map(t => (
                 <button
                   key={t.id}
                   onClick={() => setTemplateId(t.id)}
                   className={cn(
-                    "h-12 rounded-lg border flex items-center justify-center transition-all overflow-hidden",
+                    "h-20 rounded-xl border flex flex-col transition-all overflow-hidden relative group",
                     templateId === t.id ? "ring-2 ring-indigo-500 scale-95" : "border-white/5 hover:border-white/10"
                   )}
                 >
-                  <div className={cn("w-full h-full flex items-center justify-center", t.background)}>
-                    <span className={cn("text-[10px] font-bold", t.textColor)}>{t.name}</span>
+                  <div className={cn("w-full h-full flex flex-col p-2 items-center justify-center text-center", t.background)}>
+                    <span className={cn("text-[10px] leading-tight font-bold mb-1", t.textColor)}>{t.name}</span>
+                    <span className={cn(
+                      "text-sm", 
+                      t.fontFamily === 'handwriting' ? 'handwriting' : (t.fontFamily === 'font-serif' ? 'font-serif' : 'font-sans'), 
+                      t.textColor
+                    )}>
+                      {t.fontFamily === 'handwriting' ? 'Handwriting' : (t.fontFamily === 'font-serif' ? 'Serif' : 'Sans Serif')}
+                    </span>
                   </div>
                 </button>
               ))}
@@ -262,9 +298,17 @@ export default function LetterEditor() {
       {/* Editor Main */}
       <section className="flex-1 bg-immersive-viewport flex flex-col relative overflow-hidden">
         <div className="flex items-center justify-between px-8 py-4 bg-black/20 border-b border-white/5">
-          <div className="flex items-center gap-2 text-xs text-emerald-500 font-medium">
-            <Lock size={14} />
-            চিঠি এনক্রিপ্ট করা হবে
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 text-xs text-emerald-500 font-medium">
+              <Lock size={14} />
+              চিঠি এনক্রিপ্ট করা হবে
+            </div>
+            {content.length > INITIAL_LETTER_CONTENT.length && (
+              <div className="flex items-center gap-2 text-[10px] text-neutral-500 font-bold uppercase tracking-widest">
+                <CheckCircle2 size={12} className="text-neutral-600" />
+                ড্রাফট সেভ হয়েছে
+              </div>
+            )}
           </div>
         </div>
 
@@ -282,7 +326,7 @@ export default function LetterEditor() {
                 onChange={(e) => setContent(e.target.value)}
                 className={cn(
                   "flex-1 bg-transparent border-none resize-none focus:ring-0 text-black leading-[32px] p-0 mb-8 whitespace-pre-wrap",
-                    TEMPLATES.find(t => t.id === templateId)?.fontFamily === 'handwriting' ? 'handwriting' : '',
+                    TEMPLATES.find(t => t.id === templateId)?.fontFamily === 'handwriting' ? 'handwriting' : (TEMPLATES.find(t => t.id === templateId)?.fontFamily || 'font-sans'),
                     currentFontSize.class,
                     TEMPLATES.find(t => t.id === templateId)?.textColor || 'text-black'
                 )}

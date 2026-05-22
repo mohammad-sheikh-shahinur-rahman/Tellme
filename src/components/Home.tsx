@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Search, Mail, Shield, Zap, Heart, LayoutDashboard, ArrowRight } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
+import { cn } from '../lib/utils';
 
 export default function Home() {
   const [searchUsername, setSearchUsername] = useState('');
@@ -45,14 +46,30 @@ export default function Home() {
                 value={searchUsername}
                 onChange={(e) => setSearchUsername(e.target.value)}
                 placeholder="ইউজারনেম লিখুন (যেমন: nira521)"
-                className="w-full px-8 py-5 bg-white/5 border border-white/10 rounded-2xl focus:border-indigo-500 focus:ring-0 outline-none transition-all shadow-2xl text-white text-lg placeholder:text-neutral-700"
+                className={cn(
+                  "w-full px-8 py-5 bg-white/5 border rounded-2xl focus:ring-0 outline-none transition-all shadow-2xl text-white text-lg placeholder:text-neutral-700",
+                  searchUsername.length > 0 && !/^[a-zA-Z0-9_]*$/.test(searchUsername)
+                    ? "border-red-500/50 bg-red-500/5"
+                    : "border-white/10 focus:border-indigo-500"
+                )}
               />
               <button
                 type="submit"
-                className="absolute right-3 top-1/2 -translate-y-1/2 bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-500 transition-all shadow-lg active:scale-95"
+                disabled={searchUsername.length > 0 && !/^[a-zA-Z0-9_]*$/.test(searchUsername)}
+                className={cn(
+                  "absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-xl transition-all shadow-lg active:scale-95",
+                  searchUsername.length > 0 && !/^[a-zA-Z0-9_]*$/.test(searchUsername)
+                    ? "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                )}
               >
                 <Search size={20} />
               </button>
+              {searchUsername.length > 0 && !/^[a-zA-Z0-9_]*$/.test(searchUsername) && (
+                <p className="absolute -bottom-6 left-2 text-[10px] text-red-500 font-bold uppercase tracking-widest">
+                  স্পেস বা স্পেশাল ক্যারেক্টার ব্যবহার করা যাবে না
+                </p>
+              )}
             </form>
 
             {user ? (

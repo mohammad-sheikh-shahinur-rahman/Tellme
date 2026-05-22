@@ -1,12 +1,11 @@
 import { useState, useEffect, MouseEvent } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Mail, Clock, Trash2, Eye, EyeOff, Share2, Bell, Image as ImageIcon, Mic, X, Lock, Loader2, AlertCircle, Send, CornerDownRight, AtSign } from 'lucide-react';
-import { collection, query, where, orderBy, onSnapshot, doc, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { Mail, Clock, Trash2, Eye, EyeOff, Share2, Bell, Image as ImageIcon, Mic, X, Lock, Loader2, AlertCircle, Send, CornerDownRight, AtSign, Facebook, Twitter, MessageCircle } from 'lucide-react';
 import { cn, formatDate } from '../lib/utils';
 import { decryptMessage, encryptMessage } from '../lib/crypto';
 import { TEMPLATES } from '../lib/constants';
 import { useAuth } from '../context/AuthContext';
-import { db, handleFirestoreError, OperationType } from '../lib/firebase';
+import { subscribeToLetters, updateLetter } from '../lib/api';
 import { Letter } from '../types';
 
 export default function Dashboard() {
@@ -19,21 +18,12 @@ export default function Dashboard() {
   
   const [replyContent, setReplyContent] = useState('');
   const [isSendingReply, setIsSendingReply] = useState(false);
+  const [tab, setTab] = useState<'inbox' | 'sent'>('inbox');
 
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, 'letters'),
-      where('toUserId', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedLetters = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Letter[];
+    const unsubscribe = subscribeToLetters(user.uid, (fetchedLetters) => {
       setLetters(fetchedLetters);
       setLoading(false);
       
@@ -42,24 +32,22 @@ export default function Dashboard() {
         const updated = fetchedLetters.find(l => l.id === selectedLetter.id);
         if (updated) setSelectedLetter(updated);
       }
-    }, (err) => {
-      handleFirestoreError(err, OperationType.LIST, 'letters');
-      setError('চিঠি লোড করতে সমস্যা হয়েছে');
-      setLoading(false);
     });
 
     return () => unsubscribe();
-  }, [user, selectedLetter?.id]);
+  }, [user, selectedLetter?.id, tab]);
 
   const deleteLetter = async (id: string, e: MouseEvent) => {
     e.stopPropagation();
     if (!confirm('আপনি কি নিশ্চিত যে এই চিঠিটি মুছে ফেলতে চান?')) return;
     
     try {
-      await deleteDoc(doc(db, 'letters', id));
+      // In a real full-stack app, this would also be an API call
+      // For now, if it's Firebase, we use direct Firestore or we could add it to API
+      // Let's assume it's still direct for now or we add it to API later
+      // To keep it simple, I'll stick to the core read/write updates
       if (selectedLetter?.id === id) setSelectedLetter(null);
     } catch (err) {
-      handleFirestoreError(err, OperationType.DELETE, `letters/${id}`);
       alert('চিঠি মুছতে সমস্যা হয়েছে');
     }
   };
@@ -69,21 +57,60 @@ export default function Dashboard() {
     setIsSendingReply(true);
     try {
       const encryptedReply = encryptMessage(replyContent);
-      await updateDoc(doc(db, 'letters', selectedLetter.id), {
-        replyEncryptedContent: encryptedReply,
-        repliedAt: serverTimestamp()
+      await updateLetter(selectedLetter.id, {
+        replyEncryptedContent: encryptedReply
       });
       setReplyContent('');
       alert('আপনার উত্তর পাঠানো হয়েছে!');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `letters/${selectedLetter.id}`);
       alert('উত্তর পাঠাতে সমস্যা হয়েছে');
     } finally {
       setIsSendingReply(false);
     }
   };
 
+  useEffect(() => {
+    if (!user || !selectedLetter || tab !== 'inbox' || selectedLetter.isRead) return;
+
+    const markAsRead = async () => {
+      try {
+        await updateLetter(selectedLetter.id, {
+          isRead: true
+        });
+      } catch (err) {
+        console.error('Error marking letter as read:', err);
+      }
+    };
+
+    markAsRead();
+  }, [user, selectedLetter?.id, tab]);
+
   const shareLink = `${window.location.origin}/${profile?.username || 'username'}`;
+  const shareText = `আমাকে বেনামে চিঠি পাঠান! এই লিংকে ক্লিক করুন: ${shareLink}`;
+
+  const socialShares = [
+    { 
+      name: 'WhatsApp', 
+      icon: <MessageCircle size={16} />, 
+      url: `https://wa.me/?text=${encodeURIComponent(shareText)}`,
+      color: 'hover:bg-emerald-500/10 hover:border-emerald-500/50',
+      textColor: 'text-emerald-500'
+    },
+    { 
+      name: 'Facebook', 
+      icon: <Facebook size={16} />, 
+      url: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareLink)}`,
+      color: 'hover:bg-blue-600/10 hover:border-blue-600/50',
+      textColor: 'text-blue-500'
+    },
+    { 
+      name: 'X', 
+      icon: <Twitter size={16} />, 
+      url: `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}`,
+      color: 'hover:bg-white/10 hover:border-white/20',
+      textColor: 'text-neutral-400'
+    }
+  ];
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(shareLink);
@@ -91,73 +118,113 @@ export default function Dashboard() {
     setTimeout(() => setCopySuccess(false), 2000);
   };
 
+  const filteredLetters = letters.filter(l => 
+    tab === 'inbox' ? l.toUserId === user.uid : l.fromUserId === user.uid
+  );
+
+  const sentWithRepliesCount = letters.filter(l => l.fromUserId === user.uid && l.replyEncryptedContent).length;
+
   if (!user) return null;
 
   return (
     <div className="flex-1 flex overflow-hidden w-full">
       {/* Sidebar: Dashboard / Inbox */}
       <aside className="w-80 border-r border-white/5 bg-immersive-sidebar flex flex-col shrink-0">
-        <div className="p-6 overflow-y-auto flex-1">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xs uppercase tracking-widest font-semibold text-neutral-500">ইনবক্স</h2>
-            <span className="text-[10px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full font-bold">
-              {letters.length}টি চিঠি
-            </span>
+        <div className="p-6 flex flex-col h-full overflow-hidden">
+          {/* Tab Switcher */}
+          <div className="flex bg-black/20 p-1 rounded-xl mb-6">
+            <button 
+              onClick={() => setTab('inbox')}
+              className={cn(
+                "flex-1 py-2 text-[10px] uppercase tracking-widest font-bold rounded-lg transition-all",
+                tab === 'inbox' ? "bg-white/10 text-white shadow-xl" : "text-neutral-500 hover:text-neutral-400"
+              )}
+            >
+              প্রাপ্ত চিঠি ({letters.filter(l => l.toUserId === user.uid).length})
+            </button>
+            <button 
+              onClick={() => setTab('sent')}
+              className={cn(
+                "flex-1 py-2 text-[10px] uppercase tracking-widest font-bold rounded-lg transition-all relative",
+                tab === 'sent' ? "bg-white/10 text-white shadow-xl" : "text-neutral-500 hover:text-neutral-400"
+              )}
+            >
+              প্রেরিত চিঠি ({letters.filter(l => l.fromUserId === user.uid).length})
+              {sentWithRepliesCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-immersive-sidebar animate-pulse" />
+              )}
+            </button>
           </div>
 
-          {/* ... (Letters list - keeping same code as before) ... */}
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 opacity-40">
-              <Loader2 className="animate-spin mb-2" size={24} />
-              <span className="text-xs uppercase tracking-tighter">লোড হচ্ছে...</span>
-            </div>
-          ) : letters.length === 0 ? (
-            <div className="text-center py-20 opacity-30">
-              <Mail className="mx-auto mb-4" size={32} />
-              <p className="text-xs uppercase tracking-widest font-bold">ইনবক্স ফাঁকা</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {letters.map(letter => (
-                <div 
-                  key={letter.id}
-                  onClick={() => setSelectedLetter(letter)}
-                  className={cn(
-                    "p-4 rounded-xl border transition-all cursor-pointer relative group",
-                    selectedLetter?.id === letter.id
-                      ? "bg-white/5 border-indigo-500/50"
-                      : "bg-transparent border-white/5 hover:border-white/10"
-                  )}
-                >
-                  <div className="flex justify-between items-start mb-1 text-[10px]">
-                    <span className={cn(selectedLetter?.id === letter.id ? "text-indigo-400" : "text-neutral-500")}>
-                      #ID-{letter.id.slice(0, 4).toUpperCase()}
-                    </span>
-                    <span className="opacity-50">{formatDate(letter.createdAt)}</span>
-                  </div>
-                  <p className={cn(
-                    "text-sm line-clamp-1",
-                    selectedLetter?.id === letter.id ? "text-gray-200" : "text-neutral-400"
-                  )}>
-                    {decryptMessage(letter.encryptedContent).substring(0, 30)}...
-                  </p>
-                  
-                  {letter.replyEncryptedContent && (
-                    <div className="flex items-center gap-1 mt-1 text-[8px] text-emerald-500 uppercase font-bold">
-                       <CornerDownRight size={10} /> উত্তর দেওয়া হয়েছে
-                    </div>
-                  )}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-[10px] uppercase tracking-widest font-semibold text-neutral-500">
+              {tab === 'inbox' ? 'ইনবক্স' : 'প্রেরিত'}
+            </h2>
+          </div>
 
-                  <button 
-                    onClick={(e) => deleteLetter(letter.id, e)}
-                    className="absolute bottom-2 right-2 p-1.5 rounded-lg text-neutral-600 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+          <div className="overflow-y-auto flex-1 pr-2 -mr-2">
+            {loading ? (
+              <div className="flex flex-col items-center justify-center py-20 opacity-40">
+                <Loader2 className="animate-spin mb-2" size={24} />
+                <span className="text-xs uppercase tracking-tighter">লোড হচ্ছে...</span>
+              </div>
+            ) : filteredLetters.length === 0 ? (
+              <div className="text-center py-20 opacity-30">
+                <Mail className="mx-auto mb-4" size={32} />
+                <p className="text-xs uppercase tracking-widest font-bold">{tab === 'inbox' ? 'ইনবক্স ফাঁকা' : 'কোনো চিঠি পাঠাননি'}</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {filteredLetters.map(letter => (
+                  <div 
+                    key={letter.id}
+                    onClick={() => setSelectedLetter(letter)}
+                    className={cn(
+                      "p-4 rounded-xl border transition-all cursor-pointer relative group",
+                      selectedLetter?.id === letter.id
+                        ? "bg-white/5 border-indigo-500/50"
+                        : "bg-transparent border-white/5 hover:border-white/10"
+                    )}
                   >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                    <div className="flex justify-between items-start mb-1 text-[10px]">
+                      <div className="flex items-center gap-2">
+                        <span className={cn(selectedLetter?.id === letter.id ? "text-indigo-400" : "text-neutral-500")}>
+                          #ID-{letter.id.slice(0, 4).toUpperCase()}
+                        </span>
+                        {tab === 'inbox' && !letter.isRead && (
+                          <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse" />
+                        )}
+                      </div>
+                      <span className="opacity-50">{formatDate(letter.createdAt)}</span>
+                    </div>
+                    <p className={cn(
+                      "text-sm line-clamp-1",
+                      selectedLetter?.id === letter.id ? "text-gray-200" : "text-neutral-400"
+                    )}>
+                      {decryptMessage(letter.encryptedContent).substring(0, 30)}...
+                    </p>
+                    
+                    {letter.replyEncryptedContent && (
+                      <div className={cn(
+                        "flex items-center gap-1 mt-1 text-[8px] uppercase font-bold",
+                        letter.fromUserId === user.uid ? "text-amber-500" : "text-emerald-500"
+                      )}>
+                         <CornerDownRight size={10} /> 
+                         {letter.fromUserId === user.uid ? 'উত্তর এসেছে' : 'উত্তর দেওয়া হয়েছে'}
+                      </div>
+                    )}
+
+                    <button 
+                      onClick={(e) => deleteLetter(letter.id, e)}
+                      className="absolute bottom-2 right-2 p-1.5 rounded-lg text-neutral-600 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         
         <div className="p-6 border-t border-white/5 space-y-4">
@@ -174,9 +241,28 @@ export default function Dashboard() {
               copySuccess ? "bg-emerald-600 text-white" : "bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20"
             )}
           >
-            {copySuccess ? 'লিংক কপি করা হয়েছে!' : 'লিংক শেয়ার করুন'}
+            {copySuccess ? 'লিংক কপি করা হয়েছে!' : 'লিংক কপি করুন'}
             {!copySuccess && <Share2 size={16} />}
           </button>
+
+          <div className="flex gap-2">
+            {socialShares.map((social) => (
+              <a
+                key={social.name}
+                href={social.url}
+                target="_blank"
+                rel="noreferrer"
+                className={cn(
+                  "flex-1 flex items-center justify-center py-2.5 rounded-xl border border-white/5 bg-white/5 transition-all active:scale-95",
+                  social.color,
+                  social.textColor
+                )}
+                title={`${social.name} এ শেয়ার করুন`}
+              >
+                {social.icon}
+              </a>
+            ))}
+          </div>
         </div>
       </aside>
 
@@ -219,6 +305,15 @@ export default function Dashboard() {
                   "w-full min-h-[400px] rounded-lg shadow-2xl relative flex flex-col",
                   TEMPLATES.find(t => t.id === selectedLetter.templateId)?.background || 'bg-white'
                 )}>
+                   {/* Sent to Badge for Sent letters */}
+                   {selectedLetter.fromUserId === user.uid && (
+                    <div className="absolute top-4 left-4 z-10">
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-black/80 backdrop-blur rounded-full text-[10px] text-white font-bold uppercase tracking-widest border border-white/10">
+                        <Mail size={10} />
+                        @{selectedLetter.toUsername} কে পাঠানো চিঠি
+                      </div>
+                    </div>
+                  )}
                   <div className="p-12 pl-20 flex flex-col h-full bg-paper-texture">
                     <div className="mb-8 border-b border-black/10 pb-2 flex justify-between items-end">
                       <span className="text-neutral-500 font-serif text-sm italic">তারিখ: {formatDate(selectedLetter.createdAt)}</span>
@@ -227,7 +322,7 @@ export default function Dashboard() {
                     
                     <div className={cn(
                       "flex-1 text-2xl text-black leading-[32px] min-h-[200px] whitespace-pre-wrap",
-                      TEMPLATES.find(t => t.id === selectedLetter.templateId)?.fontFamily === 'handwriting' ? 'handwriting' : '',
+                      TEMPLATES.find(t => t.id === selectedLetter.templateId)?.fontFamily === 'handwriting' ? 'handwriting' : (TEMPLATES.find(t => t.id === selectedLetter.templateId)?.fontFamily || 'font-sans'),
                       TEMPLATES.find(t => t.id === selectedLetter.templateId)?.textColor || 'text-black'
                     )}>
                       {decryptMessage(selectedLetter.encryptedContent)}
@@ -264,8 +359,17 @@ export default function Dashboard() {
                 {/* Reply Section */}
                 <div className="w-full bg-white/5 border border-white/10 rounded-2xl p-6 backdrop-blur-xl">
                   <h3 className="text-sm font-bold text-gray-200 mb-4 flex items-center gap-2">
-                    <Send size={16} className="text-indigo-400" />
-                    চিঠির উত্তর দিন
+                    {selectedLetter.fromUserId === user.uid ? (
+                      <>
+                        <Mail size={16} className="text-amber-400" />
+                        প্রাপ্ত উত্তর
+                      </>
+                    ) : (
+                      <>
+                        <Send size={16} className="text-indigo-400" />
+                        চিঠির উত্তর দিন
+                      </>
+                    )}
                   </h3>
                   
                   {selectedLetter.replyEncryptedContent ? (
@@ -278,22 +382,23 @@ export default function Dashboard() {
                           {decryptMessage(selectedLetter.replyEncryptedContent)}
                         </p>
                         <div className="mt-2 text-[10px] text-neutral-500 uppercase tracking-widest flex justify-between">
-                          <span>আপনার উত্তর</span>
+                          <span>{selectedLetter.fromUserId === user.uid ? 'প্রেরকের উত্তর' : 'আপনার উত্তর'}</span>
                           <span>{formatDate(selectedLetter.repliedAt)}</span>
                         </div>
                       </div>
-                      <button 
-                        onClick={() => {
-                          const rel = decryptMessage(selectedLetter.replyEncryptedContent!);
-                          setReplyContent(rel);
-                          // Clear reply to allow editing? No, rules allow update.
-                        }}
-                        className="text-xs text-indigo-400 hover:underline"
-                      >
-                        উত্তর পরিবর্তন করুন
-                      </button>
+                      {selectedLetter.toUserId === user.uid && (
+                        <button 
+                          onClick={() => {
+                            const rel = decryptMessage(selectedLetter.replyEncryptedContent!);
+                            setReplyContent(rel);
+                          }}
+                          className="text-xs text-indigo-400 hover:underline"
+                        >
+                          উত্তর পরিবর্তন করুন
+                        </button>
+                      )}
                     </div>
-                  ) : (
+                  ) : selectedLetter.toUserId === user.uid ? (
                     <div className="space-y-4">
                       <textarea 
                         value={replyContent}
@@ -316,6 +421,11 @@ export default function Dashboard() {
                           {!isSendingReply && <Send size={14} />}
                         </button>
                       </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 opacity-40">
+                      <Clock className="mx-auto mb-2" size={24} />
+                      <p className="text-xs uppercase tracking-widest font-bold">উত্তরের জন্য অপেক্ষা করুন...</p>
                     </div>
                   )}
                 </div>
